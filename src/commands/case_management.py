@@ -19,6 +19,7 @@ import pendulum
 import humanfriendly
 import pyparsing
 from loguru import logger
+from src.packages.flag_parser import flag_parser
 
 from ..templates import RescueRenderFlags, template_environment
 from ..packages.commands import command
@@ -681,41 +682,20 @@ async def cmd_list(ctx: Context):
     _, *words = ctx.words
 
     flags = RescueRenderFlags()
-    platform_filter = None
+    platform_filter = []
 
-    # plain invocation
-    if len(words) == 0:
-        ...  # use above defaults (done this way so else can be used below as an error state)
+    double_flags, single_flags, other_words = flag_parser.extractFlags(words)
+    flags = RescueRenderFlags.from_word(single_flags)
 
-    # arguments invocation
-    elif len(words) == 1 or len(words) == 2:
-        flags_set = False
-        platform_filter_set = False
+    for possible_platform in other_words:
+        try:
+            platform_filter.append(Platforms[possible_platform.upper()])
+        except KeyError:
+            return await ctx.reply(f"unrecognized platform '{possible_platform.upper()}'")
 
-        for word in words:  # type: str
-            if word.startswith("-"):
-                if flags_set:
-                    return await _list_show_correct_usage(ctx, "2nd set of flags provided")
-                flags = RescueRenderFlags.from_word(word)
-                flags_set = True
-            else:
-                # platform or bust
-                if platform_filter_set:
-                    return await _list_show_correct_usage(ctx, "2nd platform provided")
-
-                platform_filter_set = True
-                try:
-                    platform_filter = Platforms[word.upper()]
-                except KeyError:
-                    return await ctx.reply(f"unrecognized platform '{word.upper()}'")
-
-    else:
-        return await _list_show_correct_usage(ctx, "More then 2 arguments passed to !list")
     logger.debug(f"flags set:= {flags} \t platform_filter := {platform_filter}")
-
     if(flags.show_help_message):
         return await _list_show_correct_usage(ctx, "-h flag was passed")
-
     if(len(flags.unused_flags) > 0):
         return await _list_show_correct_usage(ctx, f"Unused remaining flags: {flags.unused_flags}")
 
@@ -787,7 +767,7 @@ def _rescue_filter(
         filters.append(not rescue.active)
 
     if platform_filter:  # if we are filtering on platform
-        filters.append(rescue.platform is platform_filter)
+        filters.append(rescue.platform in platform_filter)
     return not all(filters)
 
 
